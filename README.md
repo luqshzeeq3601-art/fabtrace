@@ -2,8 +2,8 @@
 
 [![.NET 10](https://img.shields.io/badge/.NET-10.0-512bd4.svg)](https://dotnet.microsoft.com/)
 [![SQL Server](https://img.shields.io/badge/SQL%20Server-Express-CC292B.svg)](https://www.microsoft.com/sql-server)
-[![Tests](https://img.shields.io/badge/Tests-109%20Passing-success.svg)](#test-suite)
-[![Licence](https://img.shields.io/badge/Licence-MIT%20%2F%20FOSS-blue.svg)](Skills.md)
+[![CI](https://github.com/luqshzeeq3601-art/fabtrace/actions/workflows/ci.yml/badge.svg)](https://github.com/luqshzeeq3601-art/fabtrace/actions/workflows/ci.yml)
+[![Licence](https://img.shields.io/badge/Licence-MIT-blue.svg)](LICENSE)
 
 **FabTrace** is a reference smart factory platform designed for semiconductor assembly and test facilities (OSAT & machine builders). It ingests high-speed inspection results from floor machines, guarantees idempotent storage, renders a real-time SCADA digital twin via SignalR, calculates factory OEE using T-SQL stored procedures, diagnoses root causes via a local LLM assistant, and performs on-device predictive maintenance using ML.NET time-series anomaly detection.
 
@@ -71,7 +71,7 @@ flowchart TD
   * `sp_GetMachineDowntimeReport`: Exact state durations computed via windowed `LEAD()` functions.
   * `sp_GetOeeReport`: Overall Equipment Effectiveness factoring Availability, Performance, and Quality.
   * `sp_GetDefectPareto` & `sp_GetParametricDrift`: Defect Pareto rankings and parameter shifts.
-* **Targeted Reporting Indexes**: Composite indexes on `(InspectedAt, MachineId)` and `(RecipeId, Verdict)` optimizing multi-million row scan plans.
+* **Targeted Reporting Indexes**: Composite indexes on `(InspectedAt, MachineId)` and `(RecipeId, Verdict)` replacing table scans with index seeks; the before/after query plans are asserted in `PerformanceIndexTests`.
 
 ### 4. Predictive Maintenance with ML.NET
 * **On-Device Machine Learning**: Native C# time-series analysis using `Microsoft.ML.TimeSeries` (no Python or external runtime needed).
@@ -79,7 +79,7 @@ flowchart TD
 * **Automated Alerting**: Recommends preventative maintenance before physical failure thresholds trigger line-stoppage alarms.
 
 ### 5. AI Root-Cause Diagnostic Assistant
-* **Local Private LLM**: Powered by `Microsoft.Extensions.AI` and Ollama (e.g., Llama 3 / Phi-3) through standard `IChatClient`.
+* **Local Private LLM**: Powered by `Microsoft.Extensions.AI` and Ollama (`llama3.1` by default, configurable) through standard `IChatClient`.
 * **Read-Only C# Tool Calling**: LLM accesses parameterized, type-safe C# diagnostic functions. **Never runs raw model-generated SQL**.
 * **Evidence & Grounded Transparency**: Every diagnostic answer displays the exact underlying data records and tool outputs used as evidence.
 
@@ -138,7 +138,7 @@ FabTrace/
 ### Prerequisites
 * [.NET 10 SDK](https://dotnet.microsoft.com/)
 * SQL Server Express running locally at `.\SQLEXPRESS` with Windows Authentication. To use another instance, change `ConnectionStrings:FabTrace` in `src/FabTrace.Api/appsettings.json` and set `FABTRACE_TEST_CONNECTION` for the tests.
-* *(Optional for AI tab)*: [Ollama](https://ollama.com/) running locally with any model (e.g. `ollama run llama3`).
+* *(Optional for AI tab)*: [Ollama](https://ollama.com/) running locally with the configured model (`ollama pull llama3.1`).
 
 ### 1. Build & Run Tests
 ```powershell
@@ -171,9 +171,37 @@ dotnet run --project src/FabTrace.Web
 ```
 
 Log in or quick-switch using the pre-seeded demo accounts:
-* **Operator**: `operator1` / `Operator123!` (Floor SCADA view & alarms)
+* **Operator**: `operator1` / `Operator123!` (Floor SCADA view, alarms, unit traceability)
 * **Engineer**: `engineer1` / `Engineer123!` (Traceability, OEE reports, Root-Cause, ML.NET Predictive Maintenance, AI Assistant)
 * **Admin**: `admin1` / `Admin123!` (Machine administration, API key rotation, full access)
+
+These accounts and the `dev-key-<machine code>` API keys are seeded only in the Development environment. See [Security.md](Security.md).
+
+---
+
+## Configuration
+
+Everything runs with the defaults. Override settings with environment variables or `dotnet user-secrets`, never by committing secrets.
+
+| Setting | Default | Used by |
+|---|---|---|
+| `ConnectionStrings:FabTrace` | `.\SQLEXPRESS`, database `FabTrace`, Windows authentication | API |
+| `FABTRACE_TEST_CONNECTION` (environment variable) | `.\SQLEXPRESS`, database `FabTrace_Test` | Tests |
+| `Ollama:Endpoint` / `Ollama:Model` | `http://localhost:11434` / `llama3.1` | API (AI tab) |
+| `Auth:TokenSigningKey` | Random per start in Development; required elsewhere | API |
+| `Cors:AllowedOrigins` | `http://localhost:5176`, `https://localhost:7176` | API |
+| `ApiBaseUrl` | `http://localhost:5080` | Web dashboard |
+
+---
+
+## Known Limitations
+
+* **Demo data only**: all plant data comes from the simulator; no real factory data is included.
+* **Development-first**: migrations, demo plant, and demo accounts are applied automatically only in the Development environment. There is no deployment setup.
+* **PackInspect is separate**: the machine controller and its store-and-forward queue are not part of this repository; the generator stands in for it.
+* **AI tab needs Ollama**: without a local Ollama model the assistant cannot answer; the rest of the dashboard is unaffected.
+* **Simple user tokens**: the API signs its own HMAC bearer tokens that last 12 hours, with no refresh or revocation.
+* **Local HTTP**: the default launch profiles use plain HTTP; put the API behind HTTPS anywhere else.
 
 ---
 
@@ -183,4 +211,9 @@ Log in or quick-switch using the pre-seeded demo accounts:
 * [Test Plan & Verification Matrix](docs/TEST-PLAN.md)
 * [Interview Demonstration Walkthrough](docs/DEMO-SCRIPT.md)
 * [System Design Decisions (ARCHITECTURE.md)](ARCHITECTURE.md)
+* [Security Notes (Security.md)](Security.md)
 * [Approved FOSS Packages & Tool Allowlist (Skills.md)](Skills.md)
+
+## Licence
+
+[MIT](LICENSE)

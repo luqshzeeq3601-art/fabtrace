@@ -2,6 +2,10 @@ using System.Net;
 using System.Net.Http.Json;
 
 using FabTrace.Contracts;
+using FabTrace.Core.Demo;
+using FabTrace.Core.Security;
+
+using Microsoft.EntityFrameworkCore;
 
 namespace FabTrace.Tests.Integration;
 
@@ -13,24 +17,36 @@ public class AdminApiKeyTests(FabTraceApiFactory factory) : IntegrationTest(fact
     {
         using var adminClient = Factory.CreateUserClient("admin1", Roles.Admin);
 
-        var response = await adminClient.PostAsync("api/admin/machines/WB-02/api-key", null, Ct);
-        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        try
+        {
+            var response = await adminClient.PostAsync("api/admin/machines/WB-02/api-key", null, Ct);
+            Assert.Equal(HttpStatusCode.OK, response.StatusCode);
 
-        var keyResponse = await response.Content.ReadFromJsonAsync<IssueApiKeyResponse>(Ct);
-        Assert.NotNull(keyResponse);
-        Assert.Equal("WB-02", keyResponse.MachineCode);
-        Assert.StartsWith("key_wb-02_", keyResponse.RawApiKey);
+            var keyResponse = await response.Content.ReadFromJsonAsync<IssueApiKeyResponse>(Ct);
+            Assert.NotNull(keyResponse);
+            Assert.Equal("WB-02", keyResponse.MachineCode);
+            Assert.StartsWith("key_wb-02_", keyResponse.RawApiKey);
 
-        // Verify machine can now authenticate with the newly issued key
-        using var machineClient = Factory.CreateClient();
-        machineClient.DefaultRequestHeaders.Add(ApiConventions.ApiKeyHeader, keyResponse.RawApiKey);
+            // Verify machine can now authenticate with the newly issued key
+            using var machineClient = Factory.CreateClient();
+            machineClient.DefaultRequestHeaders.Add(ApiConventions.ApiKeyHeader, keyResponse.RawApiKey);
 
-        var ingestResponse = await machineClient.PostAsJsonAsync(
-            ApiConventions.InspectionResultsRoute,
-            new[] { TestData.Result() },
-            Ct);
+            var ingestResponse = await machineClient.PostAsJsonAsync(
+                ApiConventions.InspectionResultsRoute,
+                new[] { TestData.Result() },
+                Ct);
 
-        Assert.Equal(HttpStatusCode.OK, ingestResponse.StatusCode);
+            Assert.Equal(HttpStatusCode.OK, ingestResponse.StatusCode);
+        }
+        finally
+        {
+            // Issuing a key replaces the seeded demo key. All test classes share one
+            // database, so put it back or later tests that sign in as WB-02 get 401.
+            await using var db = Factory.CreateDbContext();
+            var machine = await db.Machines.SingleAsync(m => m.Code == "WB-02", CancellationToken.None);
+            machine.ApiKeyHash = ApiKeyHasher.Hash(DemoFactory.DevApiKey("WB-02"));
+            await db.SaveChangesAsync(CancellationToken.None);
+        }
     }
 
     [Fact]
