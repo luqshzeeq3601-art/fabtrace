@@ -1,0 +1,24 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\FabTrace.Api\FabTrace.Api.csproj" />
+    <ProjectReference Include="..\..\src\FabTrace.Generator\FabTrace.Generator.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Using Include="Xunit" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.AspNetCore.Mvc.Testing" />
+    <PackageReference Include="Microsoft.AspNetCore.SignalR.Client" />
+    <PackageReference Include="Microsoft.ML" />
+    <PackageReference Include="Microsoft.ML.TimeSeries" />
+    <PackageReference Include="xunit.v3" />
+  </ItemGroup>
+</Project>

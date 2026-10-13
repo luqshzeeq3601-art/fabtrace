@@ -1,0 +1,46 @@
+# Manual calls against a locally running API (dotnet run --project src/FabTrace.Api).
+# The key below is a public demo key that only exists in the Development database.
+@host = http://localhost:5080
+@apiKey = dev-key-VI-01
+
+### Health
+GET {{host}}/health
+
+### Machines
+GET {{host}}/api/machines
+
+### Send one inspection result (send it twice: the second answer says Duplicate)
+POST {{host}}/api/ingest/inspection-results
+X-Api-Key: {{apiKey}}
+Content-Type: application/json
+
+[
+  {
+    "resultId": "6f1d2c1e-0000-4000-8000-000000000001",
+    "lotNumber": "LOT-MANUAL-1",
+    "serialNumber": "LOT-MANUAL-1-0001",
+    "processStepCode": "VISION_INSPECT",
+    "recipeCode": "VIS-QFN32",
+    "recipeVersion": 1,
+    "operatorBadge": "OP103",
+    "verdict": "Fail",
+    "defectCode": "SCRATCH",
+    "inspectedAt": "2026-10-13T09:15:00+08:00",
+    "cycleTimeMs": 2100,
+    "readings": [
+      { "parameterName": "Coplanarity", "value": 41.2, "upperLimit": 80, "unit": "um" }
+    ]
+  }
+]
+
+### Trace the unit
+GET {{host}}/api/units/LOT-MANUAL-1-0001
+
+### Lot summary
+GET {{host}}/api/lots/LOT-MANUAL-1
+
+### Without a key: 401
+POST {{host}}/api/ingest/machine-states
+Content-Type: application/json
+
+[]

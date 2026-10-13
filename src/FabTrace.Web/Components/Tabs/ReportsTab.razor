@@ -1,0 +1,150 @@
+@using FabTrace.Contracts
+@using FabTrace.Web.Services
+@inject FabTraceApiClient ApiClient
+@inject UserSession Session
+
+<div class="panel-card">
+    <h3 class="section-title">OEE &amp; Yield Engineering Reports</h3>
+    <div class="input-row">
+        <div style="display: flex; gap: 0.5rem; align-items: center;">
+            <label style="font-size: 0.8rem; color: var(--text-muted);">From:</label>
+            <input type="date" class="scada-input" @bind="ReportFromDate" />
+        </div>
+        <div style="display: flex; gap: 0.5rem; align-items: center;">
+            <label style="font-size: 0.8rem; color: var(--text-muted);">To:</label>
+            <input type="date" class="scada-input" @bind="ReportToDate" />
+        </div>
+        <button class="scada-btn" @onclick="LoadReports">Run Query</button>
+    </div>
+
+    <!-- OEE Section -->
+    <h4 style="margin: 1.5rem 0 0.5rem 0; font-size: 0.95rem; color: #60a5fa;">Overall Equipment Effectiveness (OEE)</h4>
+    @if (OeeItems is null)
+    {
+        <div style="color: var(--text-muted); font-size: 0.85rem;">Click 'Run Query' to load OEE data from stored procedures.</div>
+    }
+    else
+    {
+        <table class="scada-table" style="margin-bottom: 1.5rem;">
+            <thead>
+                <tr>
+                    <th>Machine</th>
+                    <th>Line</th>
+                    <th>Availability</th>
+                    <th>Performance</th>
+                    <th>Quality</th>
+                    <th>OEE</th>
+                    <th>Produced (Good / Total)</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var o in OeeItems)
+                {
+                    <tr>
+                        <td><strong>@o.MachineCode</strong></td>
+                        <td>@o.Line</td>
+                        <td>@o.AvailabilityPercent.ToString("F1")%</td>
+                        <td>@o.PerformancePercent.ToString("F1")%</td>
+                        <td>@o.QualityPercent.ToString("F1")%</td>
+                        <td>
+                            <strong style="color: @(o.OeePercent >= 85 ? "var(--status-running)" : (o.OeePercent >= 60 ? "var(--status-idle)" : "var(--status-down)"))">
+                                @o.OeePercent.ToString("F1")%
+                            </strong>
+                        </td>
+                        <td>@o.GoodProduced / @o.TotalProduced</td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    }
+
+    <!-- Yield Section -->
+    <h4 style="margin: 1.5rem 0 0.5rem 0; font-size: 0.95rem; color: #34d399;">Yield Breakdown by Recipe &amp; Step</h4>
+    @if (YieldItems is not null)
+    {
+        <table class="scada-table" style="margin-bottom: 1.5rem;">
+            <thead>
+                <tr>
+                    <th>Machine</th>
+                    <th>Step</th>
+                    <th>Recipe</th>
+                    <th>Total Units</th>
+                    <th>Pass</th>
+                    <th>Fail</th>
+                    <th>Yield %</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var y in YieldItems)
+                {
+                    <tr>
+                        <td><strong>@y.MachineCode</strong></td>
+                        <td>@y.ProcessStepCode</td>
+                        <td>@y.RecipeCode v@y.RecipeVersion</td>
+                        <td>@y.TotalUnits</td>
+                        <td>@y.PassedUnits</td>
+                        <td>@y.FailedUnits</td>
+                        <td>
+                            <strong style="color: @(y.YieldPercent >= 95 ? "var(--status-running)" : "var(--status-down)")">
+                                @y.YieldPercent.ToString("F1")%
+                            </strong>
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    }
+
+    <!-- Downtime Section -->
+    <h4 style="margin: 1.5rem 0 0.5rem 0; font-size: 0.95rem; color: #fbbf24;">Machine State &amp; Downtime (LEAD Stored Procedure)</h4>
+    @if (DowntimeItems is not null)
+    {
+        <table class="scada-table">
+            <thead>
+                <tr>
+                    <th>Machine</th>
+                    <th>Running Time</th>
+                    <th>Idle Time</th>
+                    <th>Down Time</th>
+                    <th>Setup / Maint</th>
+                    <th>Availability</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var d in DowntimeItems)
+                {
+                    <tr>
+                        <td><strong>@d.MachineCode</strong></td>
+                        <td>@FormatSeconds(d.RunningSeconds)</td>
+                        <td>@FormatSeconds(d.IdleSeconds)</td>
+                        <td style="color: @(d.DownSeconds > 0 ? "var(--status-down)" : "inherit");">@FormatSeconds(d.DownSeconds)</td>
+                        <td>@FormatSeconds(d.SetupSeconds + d.MaintenanceSeconds)</td>
+                        <td><strong>@d.AvailabilityPercent.ToString("F1")%</strong></td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    }
+</div>
+
+@code {
+    [Parameter] public DateTime ReportFromDate { get; set; } = DateTime.UtcNow.Date.AddDays(-30);
+    [Parameter] public DateTime ReportToDate { get; set; } = DateTime.UtcNow.Date.AddDays(1);
+
+    private IReadOnlyList<YieldReportItemDto>? YieldItems;
+    private IReadOnlyList<OeeReportItemDto>? OeeItems;
+    private IReadOnlyList<MachineDowntimeItemDto>? DowntimeItems;
+
+    private async Task LoadReports()
+    {
+        YieldItems = await ApiClient.GetYieldReportAsync(ReportFromDate, ReportToDate, token: Session.Token);
+        OeeItems = await ApiClient.GetOeeReportAsync(ReportFromDate, ReportToDate, token: Session.Token);
+        DowntimeItems = await ApiClient.GetDowntimeReportAsync(ReportFromDate, ReportToDate, token: Session.Token);
+    }
+
+    private static string FormatSeconds(long sec)
+    {
+        var ts = TimeSpan.FromSeconds(sec);
+        return ts.TotalHours >= 1 ? $"{(int)ts.TotalHours}h {ts.Minutes}m" : $"{ts.Minutes}m {ts.Seconds}s";
+    }
+}

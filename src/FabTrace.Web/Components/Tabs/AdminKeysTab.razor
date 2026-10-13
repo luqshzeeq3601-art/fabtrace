@@ -1,0 +1,74 @@
+@using FabTrace.Contracts
+@using FabTrace.Web.Services
+@inject FabTraceApiClient ApiClient
+@inject UserSession Session
+
+<div class="panel-card">
+    <h3 class="section-title">Machine API Key Management</h3>
+    <p style="color: var(--text-secondary); font-size: 0.85rem; margin-bottom: 1.5rem;">
+        Admins can issue new cryptographically random API keys for shop-floor machines.
+        Raw keys are shown once and stored exclusively as SHA-256 hashes in SQL Server.
+    </p>
+
+    @if (IssuedKeyInfo is not null)
+    {
+        <div style="background: rgba(16, 185, 129, 0.15); border: 1px solid rgba(16, 185, 129, 0.3); padding: 1rem; border-radius: 8px; margin-bottom: 1.5rem;">
+            <div style="color: #34d399; font-weight: 700; margin-bottom: 0.5rem;">
+                New API Key Generated for @IssuedKeyInfo.MachineCode
+            </div>
+            <div style="font-family: monospace; font-size: 0.95rem; background: var(--bg-card); padding: 0.5rem; border-radius: 4px; word-break: break-all;">
+                @IssuedKeyInfo.RawApiKey
+            </div>
+            <div style="color: var(--text-muted); font-size: 0.75rem; margin-top: 0.5rem;">
+                Copy this key to the machine's configuration. It cannot be retrieved again from the server.
+            </div>
+        </div>
+    }
+
+    <table class="scada-table">
+        <thead>
+            <tr>
+                <th>Machine Code</th>
+                <th>Name</th>
+                <th>Line</th>
+                <th>Status</th>
+                <th>Actions</th>
+            </tr>
+        </thead>
+        <tbody>
+            @if (FloorSummary is not null)
+            {
+                @foreach (var m in FloorSummary.Machines)
+                {
+                    <tr>
+                        <td><strong>@m.MachineCode</strong></td>
+                        <td>@m.MachineName</td>
+                        <td>@m.Line</td>
+                        <td>
+                            <span style="color: @(m.IsActive ? "var(--status-running)" : "var(--status-down)")">
+                                @(m.IsActive ? "Active" : "Revoked")
+                            </span>
+                        </td>
+                        <td>
+                            <button class="scada-btn scada-btn-secondary" style="font-size: 0.75rem; padding: 0.3rem 0.6rem;"
+                                    @onclick="() => IssueKeyForMachine(m.MachineCode)">
+                                Issue New Key
+                            </button>
+                        </td>
+                    </tr>
+                }
+            }
+        </tbody>
+    </table>
+</div>
+
+@code {
+    [Parameter] public LiveFloorSummaryDto? FloorSummary { get; set; }
+
+    private IssueApiKeyResponse? IssuedKeyInfo;
+
+    private async Task IssueKeyForMachine(string machineCode)
+    {
+        IssuedKeyInfo = await ApiClient.IssueApiKeyAsync(machineCode, Session.Token);
+    }
+}

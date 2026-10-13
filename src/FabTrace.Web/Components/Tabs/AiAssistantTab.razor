@@ -1,0 +1,119 @@
+@using FabTrace.Contracts
+@using FabTrace.Web.Services
+@inject FabTraceApiClient ApiClient
+@inject UserSession Session
+
+<div class="panel-card">
+    <div class="panel-header" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+        <div>
+            <h2 class="panel-title" style="margin: 0;">🤖 AI Root-Cause Assistant</h2>
+            <p style="margin: 0.25rem 0 0 0; font-size: 0.85rem; color: var(--text-muted);">
+                Ask natural-language questions to analyze plant yield drops, machine downtime, and parametric drift. Powered by local LLM (<code>IChatClient</code>) with read-only parameterised tool calling.
+            </p>
+        </div>
+    </div>
+
+    <!-- Pre-baked Prompt Suggestions -->
+    <div style="display: flex; gap: 0.5rem; flex-wrap: wrap; margin-bottom: 1rem;">
+        <button class="scada-btn scada-btn-secondary" style="font-size: 0.8rem; padding: 0.35rem 0.75rem;"
+                @onclick='() => SetAiQuestion("Analyze why Wire Bonder yield dropped on day 16 and identify the root cause.")'>
+            💡 Wire Bonder yield drop (Day 16)
+        </button>
+        <button class="scada-btn scada-btn-secondary" style="font-size: 0.8rem; padding: 0.35rem 0.75rem;"
+                @onclick='() => SetAiQuestion("Is there any machine showing progressive contact resistance drift on Final Test?")'>
+            💡 Final Test ContactResistance drift
+        </button>
+        <button class="scada-btn scada-btn-secondary" style="font-size: 0.8rem; padding: 0.35rem 0.75rem;"
+                @onclick='() => SetAiQuestion("Show me the top failure defect codes across all lines and their Pareto share.")'>
+            💡 Defect Pareto analysis
+        </button>
+        <button class="scada-btn scada-btn-secondary" style="font-size: 0.8rem; padding: 0.35rem 0.75rem;"
+                @onclick='() => SetAiQuestion("What is the OEE breakdown (Availability, Performance, Quality) for all machines?")'>
+            💡 OEE breakdown
+        </button>
+    </div>
+
+    <!-- Question Input -->
+    <div style="display: flex; gap: 0.5rem; margin-bottom: 1.5rem;">
+        <input type="text" class="scada-input" style="flex: 1;"
+               placeholder="Ask the AI Assistant a question about plant yield, machines, lots..."
+               @bind="AiQuestion"
+               @bind:event="oninput"
+               @onkeydown="@(e => { if (e.Key == "Enter") _ = AskAiAssistant(); })" />
+        <button class="scada-btn scada-btn-primary" @onclick="AskAiAssistant" disabled="@IsAiThinking">
+            @(IsAiThinking ? "Analyzing..." : "Ask Assistant")
+        </button>
+    </div>
+
+    @if (IsAiThinking)
+    {
+        <div class="empty-state" style="padding: 2rem;">
+            <span class="pulse-dot" style="width: 12px; height: 12px; margin-right: 0.5rem;"></span>
+            Querying factory tools and analyzing ground-truth data with AI Assistant...
+        </div>
+    }
+    else if (AiResponse is not null)
+    {
+        <!-- AI Answer Box -->
+        <div style="background: var(--surface-card); border: 1px solid var(--accent); border-radius: 8px; padding: 1.25rem; margin-bottom: 1.5rem;">
+            <div style="font-weight: 700; color: var(--accent); margin-bottom: 0.5rem; display: flex; align-items: center; gap: 0.5rem;">
+                <span>🤖 Assistant Diagnosis</span>
+            </div>
+            <div style="white-space: pre-wrap; line-height: 1.6; color: var(--text-main);">
+                @AiResponse.Answer
+            </div>
+        </div>
+
+        <!-- Ground-Truth Evidence (Every answer shows its data) -->
+        @if (AiResponse.Evidence.Count > 0)
+        {
+            <h3 style="font-size: 1rem; color: var(--text-main); margin-bottom: 0.75rem; display: flex; align-items: center; gap: 0.5rem;">
+                <span>📊 Data Transparency &amp; Evidence</span>
+                <span style="font-size: 0.8rem; font-weight: normal; color: var(--text-muted);">(Retrieved via read-only C# tools)</span>
+            </h3>
+
+            <div style="display: flex; flex-direction: column; gap: 0.75rem;">
+                @foreach (var ev in AiResponse.Evidence)
+                {
+                    <details style="background: var(--surface-bg); border: 1px solid var(--border-color); border-radius: 6px; padding: 0.75rem;">
+                        <summary style="font-weight: 600; cursor: pointer; color: var(--text-main);">
+                            🔧 <code>@ev.ToolName</code> &ndash; @ev.Summary
+                        </summary>
+                        <pre style="margin-top: 0.75rem; max-height: 200px; overflow-y: auto; background: var(--surface-card); padding: 0.75rem; border-radius: 4px; font-size: 0.75rem; color: var(--text-muted); white-space: pre-wrap;">@ev.RawDataJson</pre>
+                    </details>
+                }
+            </div>
+        }
+    }
+</div>
+
+@code {
+    private string AiQuestion = "Analyze why Wire Bonder yield dropped on day 16 and identify the root cause.";
+    private AiRootCauseResponseDto? AiResponse;
+    private bool IsAiThinking = false;
+
+    private void SetAiQuestion(string q) => AiQuestion = q;
+
+    private async Task AskAiAssistant()
+    {
+        if (string.IsNullOrWhiteSpace(AiQuestion) || IsAiThinking) return;
+
+        IsAiThinking = true;
+        AiResponse = null;
+        StateHasChanged();
+
+        try
+        {
+            AiResponse = await ApiClient.AnalyzeWithAiAsync(new AiRootCauseQueryDto
+            {
+                Question = AiQuestion,
+                FromUtc = DateTime.UtcNow.AddDays(-30),
+                ToUtc = DateTime.UtcNow
+            }, token: Session.Token);
+        }
+        finally
+        {
+            IsAiThinking = false;
+        }
+    }
+}

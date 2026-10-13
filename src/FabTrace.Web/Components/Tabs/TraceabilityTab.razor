@@ -1,0 +1,92 @@
+@using FabTrace.Contracts
+@using FabTrace.Web.Services
+@inject FabTraceApiClient ApiClient
+@inject UserSession Session
+
+<div class="panel-card">
+    <h3 class="section-title">Unit Traceability Lookup</h3>
+    <div class="input-row">
+        <input class="scada-input" @bind="SearchSerialNumber" placeholder="Enter Unit Serial Number (e.g. LOT-T1-001)" />
+        <button class="scada-btn" @onclick="LookupUnit">Trace Unit</button>
+    </div>
+
+    @if (LookupError is not null)
+    {
+        <div style="color: #f87171; font-size: 0.85rem; margin-bottom: 1rem;">@LookupError</div>
+    }
+
+    @if (FoundUnit is not null)
+    {
+        <div style="background: var(--bg-elevated); padding: 1rem; border-radius: 8px; margin-bottom: 1rem;">
+            <div><strong>Serial Number:</strong> @FoundUnit.SerialNumber</div>
+            <div><strong>Lot Number:</strong> @FoundUnit.LotNumber</div>
+            <div><strong>Product:</strong> @FoundUnit.ProductCode</div>
+        </div>
+
+        <table class="scada-table">
+            <thead>
+                <tr>
+                    <th>Step</th>
+                    <th>Machine</th>
+                    <th>Recipe</th>
+                    <th>Operator</th>
+                    <th>Verdict</th>
+                    <th>Inspected At</th>
+                    <th>Readings</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var res in FoundUnit.Results)
+                {
+                    <tr>
+                        <td><strong>@res.ProcessStepCode</strong></td>
+                        <td>@res.MachineCode</td>
+                        <td>@res.RecipeCode v@res.RecipeVersion</td>
+                        <td>@res.OperatorBadge</td>
+                        <td>
+                            <span style="color: @(res.Verdict == Verdict.Pass ? "var(--status-running)" : "var(--status-down)"); font-weight: 700;">
+                                @res.Verdict
+                            </span>
+                            @if (!string.IsNullOrEmpty(res.DefectCode))
+                            {
+                                <span style="color: var(--text-muted); font-size: 0.75rem;">(@res.DefectCode)</span>
+                            }
+                        </td>
+                        <td>@res.InspectedAt.ToString("yyyy-MM-dd HH:mm:ss")</td>
+                        <td>
+                            @foreach (var r in res.Readings)
+                            {
+                                <div style="font-size: 0.75rem;">
+                                    @r.ParameterName: <strong>@r.Value @r.Unit</strong>
+                                    @if (r.LowerLimit.HasValue || r.UpperLimit.HasValue)
+                                    {
+                                        <span style="color: var(--text-muted);">[@r.LowerLimit..@r.UpperLimit]</span>
+                                    }
+                                </div>
+                            }
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    }
+</div>
+
+@code {
+    private string SearchSerialNumber = "LOT-T1-001";
+    private UnitTraceDto? FoundUnit;
+    private string? LookupError;
+
+    private async Task LookupUnit()
+    {
+        LookupError = null;
+        FoundUnit = null;
+        if (string.IsNullOrWhiteSpace(SearchSerialNumber)) return;
+
+        FoundUnit = await ApiClient.GetUnitTraceAsync(SearchSerialNumber.Trim(), Session.Token);
+        if (FoundUnit is null)
+        {
+            LookupError = $"Unit with serial number '{SearchSerialNumber}' was not found.";
+        }
+    }
+}

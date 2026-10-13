@@ -1,0 +1,498 @@
+@page "/"
+@rendermode InteractiveServer
+@inject FabTraceApiClient ApiClient
+@inject ScadaHubClient HubClient
+@inject UserSession Session
+@inject IHostEnvironment HostEnv
+@implements IAsyncDisposable
+
+<PageTitle>FabTrace – SCADA Live Floor</PageTitle>
+
+<div class="scada-container">
+    <!-- Header -->
+    <header class="scada-header">
+        <div class="scada-title-area">
+            <h1 class="scada-title">FABTRACE SCADA</h1>
+            <div class="scada-badge @(HubClient.IsConnected ? "badge-connected" : "badge-disconnected")">
+                <span class="pulse-dot"></span>
+                @(HubClient.IsConnected ? "Live Connected" : HubClient.ConnectionState)
+            </div>
+        </div>
+
+        <div class="header-controls">
+            <div class="shift-info">
+                Factory Time (UTC+8): @DateTime.UtcNow.AddHours(8).ToString("yyyy-MM-dd HH:mm:ss")
+            </div>
+
+            <!-- Role / User Pill & Switcher -->
+            <div class="user-pill">
+                <span>User: <strong>@(Session.UserName ?? "Guest")</strong></span>
+                <span class="role-badge @GetRoleBadgeClass()">
+                    @(Session.Roles.FirstOrDefault() ?? "None")
+                </span>
+                @if (HostEnv.IsDevelopment())
+                {
+                    <select class="scada-input" style="padding: 0.2rem 0.5rem; font-size: 0.75rem;" @onchange="OnQuickSwitchUser">
+                        <option value="operator1" selected="@(Session.UserName == "operator1")">operator1 (Operator)</option>
+                        <option value="engineer1" selected="@(Session.UserName == "engineer1")">engineer1 (Engineer)</option>
+                        <option value="admin1" selected="@(Session.UserName == "admin1")">admin1 (Admin)</option>
+                    </select>
+                }
+            </div>
+
+            <button class="scada-btn scada-btn-secondary" style="font-size: 0.75rem; padding: 0.3rem 0.65rem;" @onclick="OpenLoginModal">
+                @(Session.IsAuthenticated ? "Switch / Sign In" : "Sign In")
+            </button>
+            @if (Session.IsAuthenticated)
+            {
+                <button class="scada-btn scada-btn-secondary" style="font-size: 0.75rem; padding: 0.3rem 0.65rem;" @onclick="OnLogout">
+                    Sign Out
+                </button>
+            }
+        </div>
+    </header>
+
+    <!-- Top KPI Cards -->
+    @if (FloorSummary is not null)
+    {
+        <div class="kpi-grid">
+            <div class="kpi-card kpi-running">
+                <div class="kpi-label">Running</div>
+                <div class="kpi-value">@FloorSummary.RunningCount / @FloorSummary.TotalMachines</div>
+            </div>
+            <div class="kpi-card kpi-idle">
+                <div class="kpi-label">Idle / Setup</div>
+                <div class="kpi-value">@FloorSummary.IdleCount</div>
+            </div>
+            <div class="kpi-card kpi-down">
+                <div class="kpi-label">Down</div>
+                <div class="kpi-value">@FloorSummary.DownCount</div>
+            </div>
+            <div class="kpi-card kpi-alarms">
+                <div class="kpi-label">Active Alarms</div>
+                <div class="kpi-value" style="color: @(FloorSummary.CriticalAlarmsCount > 0 ? "var(--badge-crit)" : "inherit")">
+                    @FloorSummary.ActiveAlarmsCount
+                    @if (FloorSummary.CriticalAlarmsCount > 0)
+                    {
+                        <span style="font-size: 0.75rem; color: #f87171;">(@FloorSummary.CriticalAlarmsCount crit)</span>
+                    }
+                </div>
+            </div>
+            <div class="kpi-card kpi-yield">
+                <div class="kpi-label">Shift Yield</div>
+                <div class="kpi-value">@FloorSummary.OverallYieldPercent.ToString("F1")%</div>
+            </div>
+        </div>
+    }
+
+    <!-- Navigation Tabs -->
+    <div class="tabs-bar">
+        <button class="tab-btn @(ActiveTab == "Floor" ? "active" : "")" @onclick='() => SetTab("Floor")'>
+            🏭 Live Floor
+        </button>
+        <button class="tab-btn @(ActiveTab == "Trace" ? "active" : "")" @onclick='() => SetTab("Trace")'>
+            🔍 Unit Traceability
+        </button>
+        @if (Session.HasRole(Roles.Engineer) || Session.HasRole(Roles.Admin))
+        {
+            <button class="tab-btn @(ActiveTab == "Reports" ? "active" : "")" @onclick='() => SetTab("Reports")'>
+                📊 OEE &amp; Yield Reports
+            </button>
+            <button class="tab-btn @(ActiveTab == "RootCause" ? "active" : "")" @onclick='() => SetTab("RootCause")'>
+                ⚡ Root-Cause Diagnosis
+            </button>
+            <button class="tab-btn @(ActiveTab == "PredictiveMaintenance" ? "active" : "")" @onclick='() => SetTab("PredictiveMaintenance")'>
+                🔮 Predictive Maintenance (ML.NET)
+            </button>
+            <button class="tab-btn @(ActiveTab == "AiAssistant" ? "active" : "")" @onclick='() => SetTab("AiAssistant")'>
+                🤖 AI Root-Cause Assistant
+            </button>
+        }
+        @if (Session.HasRole(Roles.Admin))
+        {
+            <button class="tab-btn @(ActiveTab == "Admin" ? "active" : "")" @onclick='() => SetTab("Admin")'>
+                🔑 Admin &amp; Machine Keys
+            </button>
+        }
+    </div>
+
+    <!-- Active Tab View Components -->
+    @if (ActiveTab == "Floor")
+    {
+        <ScadaFloorTab FloorSummary="FloorSummary" LastUpdatedMachine="@LastUpdatedMachine" AllActiveAlarms="AllActiveAlarms" />
+    }
+    else if (ActiveTab == "Trace")
+    {
+        <TraceabilityTab />
+    }
+    else if (ActiveTab == "Reports" && (Session.HasRole(Roles.Engineer) || Session.HasRole(Roles.Admin)))
+    {
+        <ReportsTab ReportFromDate="ReportFromDate" ReportToDate="ReportToDate" />
+    }
+    else if (ActiveTab == "RootCause" && (Session.HasRole(Roles.Engineer) || Session.HasRole(Roles.Admin)))
+    {
+        <RootCauseTab ReportFromDate="ReportFromDate" ReportToDate="ReportToDate" />
+    }
+    else if (ActiveTab == "PredictiveMaintenance" && (Session.HasRole(Roles.Engineer) || Session.HasRole(Roles.Admin)))
+    {
+        <PredictiveMaintenanceTab ReportFromDate="ReportFromDate" ReportToDate="ReportToDate" />
+    }
+    else if (ActiveTab == "AiAssistant" && (Session.HasRole(Roles.Engineer) || Session.HasRole(Roles.Admin)))
+    {
+        <AiAssistantTab />
+    }
+    else if (ActiveTab == "Admin" && Session.HasRole(Roles.Admin))
+    {
+        <AdminKeysTab FloorSummary="FloorSummary" />
+    }
+
+    @if (ShowLoginModal)
+    {
+        <div class="login-modal-backdrop" @onclick="CloseLoginModal">
+            <div class="login-modal-card" @onclick:stopPropagation="true">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.75rem;">
+                    <h3 style="margin: 0; font-size: 1.15rem; color: #ffffff;">Sign In to FabTrace</h3>
+                    @if (Session.IsAuthenticated)
+                    {
+                        <button class="scada-btn-close" @onclick="CloseLoginModal">✕</button>
+                    }
+                </div>
+
+                <p style="color: var(--text-muted); font-size: 0.8rem; margin: 0 0 1rem 0;">
+                    Select a seeded demo role or enter custom user credentials.
+                </p>
+
+                <!-- Demo quick fill buttons -->
+                <div style="display: flex; gap: 0.4rem; margin-bottom: 1.25rem;">
+                    <button type="button" class="scada-btn scada-btn-secondary" style="font-size: 0.75rem; flex: 1; padding: 0.35rem 0.5rem;"
+                            @onclick='() => PreFillLogin("operator1", "Operator123!")'>
+                        Operator
+                    </button>
+                    <button type="button" class="scada-btn scada-btn-secondary" style="font-size: 0.75rem; flex: 1; padding: 0.35rem 0.5rem;"
+                            @onclick='() => PreFillLogin("engineer1", "Engineer123!")'>
+                        Engineer
+                    </button>
+                    <button type="button" class="scada-btn scada-btn-secondary" style="font-size: 0.75rem; flex: 1; padding: 0.35rem 0.5rem;"
+                            @onclick='() => PreFillLogin("admin1", "Admin123!")'>
+                        Admin
+                    </button>
+                </div>
+
+                <div style="margin-bottom: 0.75rem;">
+                    <label style="display: block; font-size: 0.75rem; color: var(--text-muted); margin-bottom: 0.25rem;">Username</label>
+                    <input type="text" class="scada-input" style="width: 100%;" @bind="LoginUserName" placeholder="e.g. operator1" />
+                </div>
+
+                <div style="margin-bottom: 1rem;">
+                    <label style="display: block; font-size: 0.75rem; color: var(--text-muted); margin-bottom: 0.25rem;">Password</label>
+                    <input type="password" class="scada-input" style="width: 100%;" @bind="LoginPassword" placeholder="••••••••" @onkeydown="@(e => { if (e.Key == "Enter") _ = SubmitLoginAsync(); })" />
+                </div>
+
+                @if (!string.IsNullOrEmpty(LoginErrorMessage))
+                {
+                    <div style="background: rgba(239, 68, 68, 0.15); border: 1px solid rgba(239, 68, 68, 0.4); color: #f87171; padding: 0.5rem 0.75rem; border-radius: 4px; font-size: 0.8rem; margin-bottom: 1rem;">
+                        @LoginErrorMessage
+                    </div>
+                }
+
+                <div style="display: flex; gap: 0.5rem; justify-content: flex-end;">
+                    @if (Session.IsAuthenticated)
+                    {
+                        <button type="button" class="scada-btn scada-btn-secondary" @onclick="CloseLoginModal">Cancel</button>
+                    }
+                    <button type="button" class="scada-btn" @onclick="SubmitLoginAsync" disabled="@IsLoggingIn">
+                        @(IsLoggingIn ? "Signing in..." : "Sign In")
+                    </button>
+                </div>
+            </div>
+        </div>
+    }
+</div>
+
+@code {
+    private LiveFloorSummaryDto? FloorSummary;
+    private string ActiveTab = "Floor";
+    private string? LastUpdatedMachine;
+    private DateTime ReportFromDate = DateTime.UtcNow.Date.AddDays(-30);
+    private DateTime ReportToDate = DateTime.UtcNow.Date.AddDays(1);
+
+    private bool ShowLoginModal = false;
+    private string LoginUserName = "operator1";
+    private string LoginPassword = "Operator123!";
+    private string? LoginErrorMessage;
+    private bool IsLoggingIn = false;
+
+    private List<LiveAlarmDto> AllActiveAlarms =>
+        FloorSummary?.Machines.SelectMany(m => m.ActiveAlarms).OrderByDescending(a => a.RaisedAt).ToList() ?? [];
+
+    protected override async Task OnInitializedAsync()
+    {
+        // 1. In Development, ensure the session has an authenticated demo token
+        if (HostEnv.IsDevelopment() && !Session.IsAuthenticated)
+        {
+            var res = await ApiClient.LoginAsync("operator1", "Operator123!");
+            if (res is not null)
+            {
+                Session.Login(res.UserName, res.Roles, res.Token);
+            }
+        }
+        else if (!Session.IsAuthenticated)
+        {
+            ShowLoginModal = true;
+        }
+
+        // 2. Subscribe to SignalR events
+        HubClient.OnMachineStateChanged += HandleMachineStateChanged;
+        HubClient.OnAlarmRaised += HandleAlarmRaised;
+        HubClient.OnAlarmCleared += HandleAlarmCleared;
+        HubClient.OnInspectionResultReported += HandleInspectionResult;
+        HubClient.OnConnectionStatusChanged += _ => InvokeAsync(StateHasChanged);
+
+        // 3. Load initial floor state
+        await RefreshFloorSummary();
+
+        // 4. Connect SignalR
+        await HubClient.StartAsync();
+    }
+
+    private void SetTab(string tab) => ActiveTab = tab;
+
+    private async Task RefreshFloorSummary()
+    {
+        FloorSummary = await ApiClient.GetLiveSummaryAsync(Session.Token);
+    }
+
+    private void HandleMachineStateChanged(MachineStateBroadcastDto dto)
+    {
+        InvokeAsync(() =>
+        {
+            if (FloorSummary is null) return;
+            var machine = FloorSummary.Machines.FirstOrDefault(m => m.MachineCode == dto.MachineCode);
+            if (machine is not null)
+            {
+                var index = ((List<LiveMachineStatusDto>)FloorSummary.Machines).IndexOf(machine);
+                ((List<LiveMachineStatusDto>)FloorSummary.Machines)[index] = machine with
+                {
+                    CurrentState = dto.State,
+                    StateStartedAt = dto.StartedAt,
+                    StateReasonCode = dto.ReasonCode
+                };
+                LastUpdatedMachine = dto.MachineCode;
+                RecalculateTotals();
+                StateHasChanged();
+            }
+        });
+    }
+
+    private void HandleAlarmRaised(LiveAlarmDto dto)
+    {
+        InvokeAsync(() =>
+        {
+            if (FloorSummary is null) return;
+            var machine = FloorSummary.Machines.FirstOrDefault(m => m.MachineCode == dto.MachineCode);
+            if (machine is not null)
+            {
+                var alarms = new List<LiveAlarmDto>(machine.ActiveAlarms);
+                if (!alarms.Any(a => a.EventId == dto.EventId))
+                {
+                    alarms.Insert(0, dto);
+                    var index = ((List<LiveMachineStatusDto>)FloorSummary.Machines).IndexOf(machine);
+                    ((List<LiveMachineStatusDto>)FloorSummary.Machines)[index] = machine with { ActiveAlarms = alarms };
+                    LastUpdatedMachine = dto.MachineCode;
+                    RecalculateTotals();
+                    StateHasChanged();
+                }
+            }
+        });
+    }
+
+    private void HandleAlarmCleared(AlarmClearedBroadcastDto dto)
+    {
+        InvokeAsync(() =>
+        {
+            if (FloorSummary is null) return;
+            var machine = FloorSummary.Machines.FirstOrDefault(m => m.MachineCode == dto.MachineCode);
+            if (machine is not null)
+            {
+                var alarms = machine.ActiveAlarms.Where(a => a.EventId != dto.EventId).ToList();
+                var index = ((List<LiveMachineStatusDto>)FloorSummary.Machines).IndexOf(machine);
+                ((List<LiveMachineStatusDto>)FloorSummary.Machines)[index] = machine with { ActiveAlarms = alarms };
+                LastUpdatedMachine = dto.MachineCode;
+                RecalculateTotals();
+                StateHasChanged();
+            }
+        });
+    }
+
+    private void HandleInspectionResult(InspectionResultBroadcastDto dto)
+    {
+        InvokeAsync(() =>
+        {
+            if (FloorSummary is null) return;
+            var machine = FloorSummary.Machines.FirstOrDefault(m => m.MachineCode == dto.MachineCode);
+            if (machine is not null)
+            {
+                var inspected = machine.ShiftUnitsInspected + 1;
+                var passed = machine.ShiftUnitsPassed + (dto.Verdict == Verdict.Pass ? 1 : 0);
+                var failed = machine.ShiftUnitsFailed + (dto.Verdict == Verdict.Fail ? 1 : 0);
+                var yieldPct = inspected > 0 ? (double)passed / inspected * 100.0 : 100.0;
+
+                var index = ((List<LiveMachineStatusDto>)FloorSummary.Machines).IndexOf(machine);
+                ((List<LiveMachineStatusDto>)FloorSummary.Machines)[index] = machine with
+                {
+                    ShiftUnitsInspected = inspected,
+                    ShiftUnitsPassed = passed,
+                    ShiftUnitsFailed = failed,
+                    YieldPercent = yieldPct,
+                    CurrentLotNumber = dto.LotNumber
+                };
+                LastUpdatedMachine = dto.MachineCode;
+                RecalculateTotals();
+                StateHasChanged();
+            }
+        });
+    }
+
+    private void RecalculateTotals()
+    {
+        if (FloorSummary is null) return;
+
+        var running = FloorSummary.Machines.Count(m => m.CurrentState == MachineState.Running);
+        var idle = FloorSummary.Machines.Count(m => m.CurrentState == MachineState.Idle || m.CurrentState == MachineState.Setup);
+        var down = FloorSummary.Machines.Count(m => m.CurrentState == MachineState.Down);
+        var other = FloorSummary.Machines.Count(m => m.CurrentState == MachineState.Maintenance);
+
+        var inspected = FloorSummary.Machines.Sum(m => m.ShiftUnitsInspected);
+        var passed = FloorSummary.Machines.Sum(m => m.ShiftUnitsPassed);
+        var failed = FloorSummary.Machines.Sum(m => m.ShiftUnitsFailed);
+        var overallYield = inspected > 0 ? (double)passed / inspected * 100.0 : 100.0;
+
+        var alarmsCount = FloorSummary.Machines.Sum(m => m.ActiveAlarms.Count);
+        var critCount = FloorSummary.Machines.Sum(m => m.ActiveAlarms.Count(a => a.Severity == AlarmSeverity.Critical));
+
+        FloorSummary = FloorSummary with
+        {
+            RunningCount = running,
+            IdleCount = idle,
+            DownCount = down,
+            OtherCount = other,
+            ActiveAlarmsCount = alarmsCount,
+            CriticalAlarmsCount = critCount,
+            TotalShiftInspected = inspected,
+            TotalShiftPassed = passed,
+            TotalShiftFailed = failed,
+            OverallYieldPercent = overallYield
+        };
+    }
+
+    private async Task OnQuickSwitchUser(ChangeEventArgs e)
+    {
+        if (!HostEnv.IsDevelopment()) return;
+
+        var targetUser = e.Value?.ToString() ?? "operator1";
+        var password = targetUser switch
+        {
+            "operator1" => "Operator123!",
+            "engineer1" => "Engineer123!",
+            "admin1" => "Admin123!",
+            _ => "Operator123!"
+        };
+
+        var res = await ApiClient.LoginAsync(targetUser, password);
+        if (res is not null)
+        {
+            Session.Login(res.UserName, res.Roles, res.Token);
+            ActiveTab = "Floor";
+            await RefreshFloorSummary();
+            StateHasChanged();
+        }
+    }
+
+    private string GetRoleBadgeClass() => Session.Roles.FirstOrDefault() switch
+    {
+        Roles.Admin => "role-admin",
+        Roles.Engineer => "role-engineer",
+        _ => "role-operator"
+    };
+
+    private void OpenLoginModal()
+    {
+        LoginErrorMessage = null;
+        ShowLoginModal = true;
+    }
+
+    private void CloseLoginModal()
+    {
+        if (Session.IsAuthenticated)
+        {
+            ShowLoginModal = false;
+        }
+    }
+
+    private void PreFillLogin(string user, string pass)
+    {
+        LoginUserName = user;
+        LoginPassword = pass;
+        LoginErrorMessage = null;
+    }
+
+    private async Task SubmitLoginAsync()
+    {
+        if (string.IsNullOrWhiteSpace(LoginUserName) || string.IsNullOrWhiteSpace(LoginPassword))
+        {
+            LoginErrorMessage = "Please enter both username and password.";
+            return;
+        }
+
+        IsLoggingIn = true;
+        LoginErrorMessage = null;
+        try
+        {
+            var res = await ApiClient.LoginAsync(LoginUserName.Trim(), LoginPassword);
+            if (res is not null)
+            {
+                Session.Login(res.UserName, res.Roles, res.Token);
+                ShowLoginModal = false;
+                LoginPassword = "";
+                await RefreshFloorSummary();
+                if (!HubClient.IsConnected)
+                {
+                    await HubClient.StartAsync();
+                }
+                StateHasChanged();
+            }
+            else
+            {
+                LoginErrorMessage = "Invalid username or password.";
+            }
+        }
+        catch (Exception ex)
+        {
+            LoginErrorMessage = ex.Message;
+        }
+        finally
+        {
+            IsLoggingIn = false;
+        }
+    }
+
+    private void OnLogout()
+    {
+        Session.Logout();
+        LoginUserName = "operator1";
+        LoginPassword = "Operator123!";
+        LoginErrorMessage = null;
+        ShowLoginModal = true;
+        ActiveTab = "Floor";
+        StateHasChanged();
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        HubClient.OnMachineStateChanged -= HandleMachineStateChanged;
+        HubClient.OnAlarmRaised -= HandleAlarmRaised;
+        HubClient.OnAlarmCleared -= HandleAlarmCleared;
+        HubClient.OnInspectionResultReported -= HandleInspectionResult;
+        await HubClient.DisposeAsync();
+    }
+}

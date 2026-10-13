@@ -1,0 +1,13 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/FabTrace.Api/FabTrace.Api.csproj" />
+    <Project Path="src/FabTrace.Contracts/FabTrace.Contracts.csproj" />
+    <Project Path="src/FabTrace.Core/FabTrace.Core.csproj" />
+    <Project Path="src/FabTrace.Data/FabTrace.Data.csproj" />
+    <Project Path="src/FabTrace.Generator/FabTrace.Generator.csproj" />
+    <Project Path="src/FabTrace.Web/FabTrace.Web.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/FabTrace.Tests/FabTrace.Tests.csproj" />
+  </Folder>
+</Solution>
