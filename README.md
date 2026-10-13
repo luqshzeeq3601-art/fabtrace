@@ -51,6 +51,25 @@ flowchart TD
 
 ---
 
+## Platform Showcase
+
+| 🏭 Live SCADA Floor Twin | 🔍 Unit Traceability |
+|:---:|:---:|
+| [![Live SCADA Floor](docs/screenshots/01-scada-live-floor.png)](docs/screenshots/01-scada-live-floor.png) | [![Unit Traceability](docs/screenshots/02-unit-traceability.png)](docs/screenshots/02-unit-traceability.png) |
+| *Real-time SignalR machine state streaming & live alarms* | *End-to-end unit process parameters & sensor readings* |
+
+| 📊 OEE & Stored Procedure Reports | ⚡ Root-Cause & Pareto Analysis |
+|:---:|:---:|
+| [![OEE & Yield Reports](docs/screenshots/03-oee-reports.png)](docs/screenshots/03-oee-reports.png) | [![Root-Cause Diagnosis](docs/screenshots/04-root-cause-diagnosis.png)](docs/screenshots/04-root-cause-diagnosis.png) |
+| *Availability, Performance, and Quality rollups* | *Automated failure detection & Pareto defect breakdown* |
+
+| 🔮 ML.NET Predictive Maintenance |
+|:---:|
+| [![Predictive Maintenance](docs/screenshots/05-predictive-maintenance.png)](docs/screenshots/05-predictive-maintenance.png) |
+| *Time-series change-point & anomaly detection for proactive equipment drift prevention* |
+
+---
+
 ## Key Features
 
 ### 1. High-Throughput Idempotent Ingestion
@@ -150,7 +169,13 @@ dotnet build
 
 # Run all 109 unit and integration tests (automatically prepares FabTrace_Test)
 dotnet test
+
+# When API/Web services are already running locally:
+dotnet test -c Release --no-build
 ```
+
+![xUnit v3 Test Suite Results – 109 Passing Tests](docs/screenshots/00-test-results.png)
+
 
 ### 2. Start the Backend API
 ```powershell
